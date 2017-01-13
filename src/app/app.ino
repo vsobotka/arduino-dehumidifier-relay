@@ -14,102 +14,58 @@
   * Rotary encoder: KY-040﻿
 */
 
-#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <dht.h>
 
-#define dht_dpin A0
-
-// set the LCD address to 0x27 for a 16 chars 2 line display
-// A FEW use address 0x3F
-// Set the pins on the I2C chip used for LCD connections:
-//                    addr, en,rw,rs,d4,d5,d6,d7,bl,blpol
-LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
+#define dhtDataPin A0
 dht DHT;
 
-// proměnné pro nastavení propojovacích pinů
-int pinCLK = 3;
-int pinDT  = 4;
-int pinSW  = 5;
+/* Rotary encoder pins */
+const int rePinCLK = 3;
+const int rePinDT  = 4;
+const int rePinSW  = 5;
+/* States for rotary encoder */
+int reValue = 0;
+int reOldValueCLK;
 
-// proměnné pro uložení pozice a stavů pro určení směru
-// a stavu tlačítka
-int poziceEnkod = 0;
-int stavPred;
-int stavCLK;
-int stavSW;
-
-volatile int seconds;
-
-bool refresh = false;
-
+/* set the LCD address to 0x27 for a 16 chars 2 line display
+ * A FEW use address 0x3F
+ * Set the pins on the I2C chip used for LCD connections:
+ *                    addr, en,rw,rs,d4,d5,d6,d7,bl,blpol
+*/
+LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
+bool shouldUpdateLCD = false;
 String lcdRowHumidity;
 String lcdRowTemperature;
 String lcdRowHumidityOld;
 String lcdRowTemperatureOld;
 
-void setup()   /*----( SETUP: RUNS ONCE )----*/
-{
-  Serial.begin(9600);  // Used to type in characters
+/* seconds counter */
+volatile int seconds;
 
-  /* Setup LCD */
-  lcd.begin(16,2);
-  
-  /* Setup rotary encoder */
-  pinMode(pinCLK, INPUT);
-  pinMode(pinDT, INPUT);
-  pinMode(pinSW, INPUT_PULLUP);
-  stavPred = digitalRead(pinCLK);
-  
-  /* Setup timer to 1s */
-  cli();
-  TCCR1A = 0;
-  TCCR1B = 0;
-
-  OCR1A = 15624;
-  TCCR1B |= (1 << WGM12);
-  TCCR1B |= (1 << CS10);
-  TCCR1B |= (1 << CS12);
-  TIMSK1 |= (1 << OCIE1A);
-  sei();
+void setup() {
+  Serial.begin(9600);
+  initLCD();
+  initRotaryEncoder();
+  initseconds();
 }
 
-void loop()
-{
-  stavCLK = digitalRead(pinCLK);
-  if (stavCLK != stavPred) {
-    if (digitalRead(pinDT) != stavCLK) {
-      Serial.print("Rotace vpravo => | ");
-      poziceEnkod ++;
-    }
-    else {
-      Serial.print("Rotace vlevo  <= | ");
-      poziceEnkod--;
-    }
-    Serial.print("Pozice enkoderu: ");
-    Serial.println(poziceEnkod);
-  }
-  stavPred = stavCLK;
-  stavSW = digitalRead(pinSW);
-  if (stavSW == 0) {
-    Serial.println("Stisknuto tlacitko enkoderu!");
-    delay(500);
-  }
+void loop() {
+  rotaryEncoderEvaluate();
 
-  if (refresh) {
+  if (shouldUpdateLCD) {
       getSensorData();
       updateLCD();
 
-      refresh = false;
+      shouldUpdateLCD = false;
   }
 }
 
-ISR(TIMER1_COMPA_vect)
-{
+ISR(seconds1_COMPA_vect) {
     seconds++;
 
     if (seconds % 5 == 0) {
-        refresh = true;
+        shouldUpdateLCD = true;
     }
     
     if (seconds == 10)
@@ -119,7 +75,7 @@ ISR(TIMER1_COMPA_vect)
 }
 
 void getSensorData() {
-  DHT.read11(dht_dpin);
+  DHT.read11(dhtDataPin);
   
   String captionHumidity = "Vlhkost: ";
   double sensorHum = DHT.humidity;
@@ -144,5 +100,70 @@ void updateLCD() {
     lcdRowHumidityOld = lcdRowHumidity;
     lcdRowTemperatureOld = lcdRowTemperature;
   }
+}
+
+void initLCD() {
+  lcd.begin(16,2);
+}
+
+void initRotaryEncoder() {
+  pinMode(rePinCLK, INPUT);
+  pinMode(rePinDT, INPUT);
+  pinMode(rePinSW, INPUT_PULLUP);
+  reOldValueCLK = digitalRead(rePinCLK);
+}
+
+void initseconds() {
+  cli();
+  TCCR1A = 0;
+  TCCR1B = 0;
+
+  OCR1A = 15624;
+  TCCR1B |= (1 << WGM12);
+  TCCR1B |= (1 << CS10);
+  TCCR1B |= (1 << CS12);
+  TIMSK1 |= (1 << OCIE1A);
+  sei();
+}
+
+void rotaryEncoderEvaluate() {
+  int reValueCLK;
+  int reValueSW;
+  
+  reValueCLK = digitalRead(rePinCLK);
+  if (reValueCLK != reOldValueCLK) {
+    if (digitalRead(rePinDT) != reValueCLK) {
+      rotaryEncoderRightRotation();
+    } else {
+      rotaryEncoderLeftRotation();
+    }
+
+    rotaryEncoderAfterChange();
+  }
+  reOldValueCLK = reValueCLK;
+  reValueSW = digitalRead(rePinSW);
+  if (reValueSW == 0) {
+    rotaryEncoderButtonClick();
+  }
+}
+
+void rotaryEncoderLeftRotation() {
+  Serial.print("Rotace vlevo  <= | ");
+  reValue--;
+}
+
+void rotaryEncoderRightRotation() {
+  Serial.print("Rotace vpravo => | ");
+  reValue++;
+}
+
+void rotaryEncoderButtonClick() {
+  Serial.println("Stisknuto tlacitko enkoderu!");
+  delay(500);
+}
+
+void rotaryEncoderAfterChange() {
+  Serial.print("Pozice enkoderu: ");
+  Serial.println(reValue);
 }
 
