@@ -1,6 +1,20 @@
+/*
+  arduino-dehumidifier-relay
+  
+  Repository:
+  - https://github.com/vsobotka/arduino-dehumidifier-relay
+
+  Controls external dehumidifier with relay based on desired and wanted humidity in a room.
+
+  The circuit:
+  * LCD: 16x2 blue with PCF8574AT A0A1A2 driver
+  * - http://arduino-info.wikispaces.com/LCD-Blue-I2C#v1
+  * - https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads
+  * Humidity sensor: DHT11
+  * Rotary encoder: KY-040﻿
+*/
 
 #include <Wire.h>
-// https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads
 #include <LiquidCrystal_I2C.h>
 #include <dht.h>
 
